@@ -59,7 +59,7 @@ parse.js: parse.jison $(JISON)
 units/kbd.js: units/kbd.ll
 	echo "Munging $< into $@"
 	@echo "var llvm_ir = [" > $@; \
-	egrep -v "^target |^@stdout =|declare.*@malloc|declare.*@fflush|declare.*@printf|struct._IO_FILE =" $< | \
+	egrep -v "^target |^source_filename|^@stdout =|declare.*@malloc|declare.*@fflush|declare.*@printf|struct._IO_FILE =" $< | \
 	    sed -e "s@\\\\@\\\\\\\\@g" \
 	        -e "s/'/\\\\'/g" \
 		-e "s/^/'/" \
