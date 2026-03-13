@@ -19,7 +19,7 @@ function CRT (st) {
     ir.push(['; kbd.c finish']);
     ir.push(['']);
 
-    ir.push('  ' + call + ' = call %struct.termios* @termios_raw()');
+    ir.push('  ' + call + ' = call ptr @termios_raw()');
     return ir;
   }
 
@@ -42,8 +42,8 @@ function CRT (st) {
         str = st.new_name('%str'),
         call = st.new_name('%call');
     ir.push('  ; CLRSCR start');
-    ir.push('  ' + str + ' = getelementptr inbounds [5 x i8]* @.vt100.clearscreen, i32 0, i32 0');
-    ir.push('  ' + call + ' = call i32 (i8*, ...)* @printf(i8* ' + str + ')');
+    ir.push('  ' + str + ' = getelementptr inbounds [5 x i8], ptr @.vt100.clearscreen, i32 0, i32 0');
+    ir.push('  ' + call + ' = call i32 (ptr, ...) @printf(ptr ' + str + ')');
     ir.push('  ; CLRSCR finish');
     return ir;
   }
@@ -75,8 +75,8 @@ function CRT (st) {
     y = cparams[1];
     // TODO: check that crtinit has been called first
     ir.push('  ; GOTOXY start');
-    ir.push('  ' + str + ' = getelementptr inbounds [9 x i8]* @.vt100.movevh, i32 0, i32 0');
-    ir.push('  ' + call + ' = call i32 (i8*, ...)* @printf(i8* ' + str +
+    ir.push('  ' + str + ' = getelementptr inbounds [9 x i8], ptr @.vt100.movevh, i32 0, i32 0');
+    ir.push('  ' + call + ' = call i32 (ptr, ...) @printf(ptr ' + str +
             ', i32 ' + y.ilocal + ', i32 ' + x.ilocal + ')');
     ir.push('  ; GOTOXY finish');
     return ir;

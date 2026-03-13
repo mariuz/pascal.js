@@ -164,7 +164,7 @@ function IR(theAST) {
           t.type = {node:'type',name:'CHARACTER'};
         }
         t.type = normalize_type(t.type);
-        lltype = "i8*";
+        lltype = "ptr";
         vdef = "null";
         break;
       case 'ARRAY':
@@ -372,7 +372,7 @@ function IR(theAST) {
       // sub-program scope
       var sname = "%" + st.new_name(id + "_stack");
       ir.push('  ' + sname + ' = alloca ' + vtype.lltype);
-      ir.push('  store ' + vtype.lltype + ' ' + vdef + ', ' + vtype.lltype + '* ' + sname);
+      ir.push('  store ' + vtype.lltype + ' ' + vdef + ', ptr ' + sname);
     }
 
     st.insert(id,{node:node,type:vtype,sname:sname,level:pdecl.level});
@@ -382,7 +382,7 @@ function IR(theAST) {
   function allocate_enums(ir,ids,fname,type,lltype) {
     var ecnt = ids.length,
         vlist = [];
-    type.enum_type = '[' + ecnt + ' x i8*]';
+    type.enum_type = '[' + ecnt + ' x ptr]';
     type.enum_var = '@' + st.new_name(type.name);
     type.origname = type.name;
     type.name = 'INTEGER';
@@ -395,7 +395,7 @@ function IR(theAST) {
           eidstr = st.new_name(type.enum_var + '.' + eid),
           eitype = '[' + elen + ' x i8]',
           estr = 'c"' + eid + '\\00"';
-      vlist.push('i8* getelementptr inbounds (' + eitype + '* ' + eidstr + ', i32 0, i32 0)');
+      vlist.push('ptr getelementptr inbounds (' + eitype + ', ptr ' + eidstr + ', i32 0, i32 0)');
       ir.push([eidstr + ' = private unnamed_addr constant ' + eitype + ' ' + estr]);
       // Each enumeration element is a var declaration
       allocate_variable(ir,'var_decl',eid.toUpperCase(),fname,type,i);
@@ -467,10 +467,10 @@ function IR(theAST) {
         }
 
         ir.push('');
-        ir.push('declare i8* @malloc(i64)');
-        ir.push('declare i64 @strlen(i8*)');
-        ir.push('declare i8* @strncpy(i8*, i8*, i64)');
-        ir.push('declare i8* @strncat(i8*, i8*, i64)');
+        ir.push('declare ptr @malloc(i64)');
+        ir.push('declare i64 @strlen(ptr)');
+        ir.push('declare ptr @strncpy(ptr, ptr, i64)');
+        ir.push('declare ptr @strncat(ptr, ptr, i64)');
         ir.push('');
         ir.push('define i32 @main() {');
         ir.push('entry:');
@@ -523,11 +523,11 @@ function IR(theAST) {
               pname = "%" + st.new_name(fparam.id + "_fparam"),
               sname = "%" + st.new_name(fparam.id + "_fparam_stack");
           if (fparam.var) {
-            vdecl_ir.push('  ' + pname + ' = load ' + lltype + '* ' + sname);
-            param_list.push(lltype + '* ' + sname);
+            vdecl_ir.push('  ' + pname + ' = load ' + lltype + ', ptr ' + sname);
+            param_list.push('ptr ' + sname);
           } else {
             vdecl_ir.push('  ' + sname + ' = alloca ' + lltype);
-            vdecl_ir.push('  store ' + lltype + ' ' + pname + ', ' + lltype + '* ' + sname);
+            vdecl_ir.push('  store ' + lltype + ' ' + pname + ', ptr ' + sname);
             param_list.push(lltype + ' ' + pname);
           }
           st.insert(fparam.id,{node:'var_decl',type:ftype,pname:pname,sname:sname,var:fparam.var,level:level});
@@ -567,7 +567,7 @@ function IR(theAST) {
               ldecl = st.lookup(lparam.id),
               sname = ldecl.sname;
           ldecl.type = normalize_type(ldecl.type);
-          lparam_list.push(ldecl.type.lltype + '* ' + sname);
+          lparam_list.push('ptr ' + sname);
         }
         param_list = lparam_list.concat(param_list);
 
@@ -588,7 +588,7 @@ function IR(theAST) {
         // Postpone variable declarations until inside the body
         ir.push.apply(ir, stmts_ir);
         if (pdecl.ireturn) {
-          ir.push('  %retreg = load ' + pitype + '* %retval');
+          ir.push('  %retreg = load ' + pitype + ', ptr %retval');
           ir.push('  ret ' + pitype + ' %retreg');
         } else {
           ir.push('  ret ' + pitype + ' 0');
@@ -625,7 +625,7 @@ function IR(theAST) {
 
         var sname = allocate_variable(ir,'const_decl',id,fname,expr.type,expr.val);
 
-        ir.push('  store ' + expr.itype + ' ' + expr.ilocal + ', ' + expr.itype + '* ' + sname);
+        ir.push('  store ' + expr.itype + ' ' + expr.ilocal + ', ptr ' + sname);
         break;
 
       case 'proc_decl':
@@ -672,37 +672,34 @@ function IR(theAST) {
 
         if (lvalue.type.name === 'STRING' && expr.type.name === 'STRING' && expr.val) {
           // string literal being assigned to string variable
-          ir.push('  store i8* getelementptr inbounds (' + expr.itype + ' ' + expr.istack + ', i32 0, i32 0), ' + litype + '* ' + listack);
+          ir.push('  store ptr ' + expr.ilocal + ', ptr ' + listack);
         } else if (lvalue.type.name === 'STRING' && expr.type.name === 'STRING') {
           // string being assigned to string so malloc and copy
           var slen1 = '%' + st.new_name('slen'),
               slen2 = '%' + st.new_name('slen'),
               lvar = '%' + st.new_name('lvar'),
-              decay1 = '%' + st.new_name('arraydecay'),
-              decay2 = '%' + st.new_name('arraydecay'),
-              chr = '%' + st.new_name('chr'),
               res = '%' + st.new_name('res');
-          ir.push('  ' + slen1 + ' = call i64 @strlen(i8* ' + expr.ilocal + ')');
+          ir.push('  ' + slen1 + ' = call i64 @strlen(ptr ' + expr.ilocal + ')');
           ir.push('  ' + slen2 + ' = add i64 1, ' + slen1);
-          ir.push('  ' + lvar + ' = call i8* @malloc(i64 ' + slen2 + ')');
-          ir.push('  store i8* ' + lvar + ', ' + litype + '* ' + listack);
-          ir.push('  ' + res + ' = call i8* @strncpy(i8* ' + lvar + ', i8* ' + expr.ilocal + ', i64 ' + slen2 + ')');
+          ir.push('  ' + lvar + ' = call ptr @malloc(i64 ' + slen2 + ')');
+          ir.push('  store ptr ' + lvar + ', ptr ' + listack);
+          ir.push('  ' + res + ' = call ptr @strncpy(ptr ' + lvar + ', ptr ' + expr.ilocal + ', i64 ' + slen2 + ')');
         } else if (lvalue.type.name === 'REAL' && expr.type.name === 'INTEGER') {
           // coerce integer to real
           var conv = st.new_name("%conv");
           ir.push('  ' + conv + ' = sitofp i32 ' + expr.ilocal + ' to float');
-          ir.push('  store float ' + conv + ', ' + litype + '* ' + listack);
+          ir.push('  store float ' + conv + ', ptr ' + listack);
         } else if (lvalue.type.origname === 'BYTE' && expr.type.origname === 'INTEGER') {
           // coerce integer to byte
           var conv = st.new_name("%conv");
           ir.push('  ' + conv + ' = trunc i32 ' + expr.ilocal + ' to i8');
-          ir.push('  store i8 ' + conv + ', ' + litype + '* ' + listack);
+          ir.push('  store i8 ' + conv + ', ptr ' + listack);
         } else if (lvalue.type.name !== expr.type.name) {
           throw new Error("Type of lvalue and expression do not match: " + lvalue.type.name + " vs " + expr.type.name);
         } else if (lvalue.type.origname !== expr.type.origname) {
           throw new Error("Subtype of lvalue and expression do not match: " + lvalue.type.origname + " vs " + expr.type.origname);
         } else {
-          ir.push('  store ' + expr.itype + ' ' + expr.ilocal + ', ' + litype + '* ' + listack);
+          ir.push('  store ' + expr.itype + ' ' + expr.ilocal + ', ptr ' + listack);
         }
         
         ast.itype = litype;
@@ -789,7 +786,7 @@ function IR(theAST) {
                 lltype = null;
             ir.push.apply(ir, toIR(lparam,level,fnames));
             lparam.type = normalize_type(lparam.type),
-            param_list.push(lparam.type.lltype + "* " + lparam.istack);
+            param_list.push('ptr ' + lparam.istack);
           }
           for(var i=0; i < cparams.length; i++) {
             var cparam = cparams[i],
@@ -797,11 +794,7 @@ function IR(theAST) {
             if (cparams[i].lparam) {
               throw new Error("TODO handle lparam in call");
             } else if (fparam.var) {
-              param_list.push(cparam.itype + "* " + cparam.istack);
-            } else if (fparam.type.name === 'STRING' && cparam.itype[0] === '[') {
-              // TODO: above check is ugly, should be better way to distinguish character array from i8* string
-              // coerce character array to i8*
-              param_list.push('i8* getelementptr inbounds (' + cparam.itype + ' ' + cparam.istack + ', i32 0, i32 0)');
+              param_list.push('ptr ' + cparam.istack);
             } else {
               param_list.push(cparam.itype + " " + cparam.ilocal);
             }
@@ -937,12 +930,12 @@ function IR(theAST) {
 
         ir.push('');
         ir.push(for_start + ':');
-        ir.push('  store ' + start.itype + ' ' + start.ilocal + ', ' + index.itype + '* ' + index.istack);
+        ir.push('  store ' + start.itype + ' ' + start.ilocal + ', ptr ' + index.istack);
         ir.push('  br label %' + for_cond); 
 
         ir.push('');
         ir.push(for_cond + ':');
-        ir.push('  ' + for1 + ' = load i32* ' + index.istack);
+        ir.push('  ' + for1 + ' = load i32, ptr ' + index.istack);
         if (by === 1) {
           ir.push('  ' + for_cmp1 + ' = icmp sle i32 ' + for1 + ', ' + end.ilocal);
         } else {
@@ -953,15 +946,15 @@ function IR(theAST) {
         ir.push('');
         ir.push(for_body + ':');
         ir.push.apply(ir, toIR(stmt,level,fnames));
-        ir.push('  ' + for2 + ' = load i32* ' + index.istack);
+        ir.push('  ' + for2 + ' = load i32, ptr ' + index.istack);
         ir.push('  ' + for_cmp2 + ' = icmp eq i32 ' + for2 + ', ' + end.ilocal);
         ir.push('  br i1 ' + for_cmp2 + ', label %' + for_end + ', label %' + for_inc);
 
         ir.push('');
         ir.push(for_inc + ':');
-        ir.push('  ' + for3 + ' = load i32* ' + index.istack);
+        ir.push('  ' + for3 + ' = load i32, ptr ' + index.istack);
         ir.push('  ' + for_inc1 + ' = add nsw i32 ' + for3 + ', ' + by);
-        ir.push('  store i32 ' + for_inc1 + ', i32* ' + index.istack);
+        ir.push('  store i32 ' + for_inc1 + ', ptr ' + index.istack);
         ir.push('  br label %' + for_cond);
 
         ir.push('');
@@ -1178,13 +1171,13 @@ function IR(theAST) {
         ritype = atype.type.lltype;
         if (atype.name === 'STRING') {
           ir.push('  ' + sub + ' = sub ' + expr.itype + ' ' + expr.ilocal + ', ' + start);
-          ir.push('  ' + aptr1 + ' = load ' + atype.lltype + '* ' + lvalue.istack);
-          ir.push('  ' + aoff + ' = getelementptr inbounds ' + atype.lltype + ' ' + aptr1 + ', i32 ' + sub);
-          ir.push('  ' + aval + ' = load ' + atype.lltype + ' ' + aoff);
+          ir.push('  ' + aptr1 + ' = load ptr, ptr ' + lvalue.istack);
+          ir.push('  ' + aoff + ' = getelementptr inbounds i8, ptr ' + aptr1 + ', i32 ' + sub);
+          ir.push('  ' + aval + ' = load i8, ptr ' + aoff);
         } else {
           ir.push('  ' + sub + ' = sub ' + expr.itype + ' ' + expr.ilocal + ', ' + start);
-          ir.push('  ' + aoff + ' = getelementptr inbounds ' + atype.lltype + '* ' + lvalue.istack + ', i32 0, ' + expr.itype + ' ' + sub);
-          ir.push('  ' + aval + ' = load ' + ritype + '* ' + aoff);
+          ir.push('  ' + aoff + ' = getelementptr inbounds ' + atype.lltype + ', ptr ' + lvalue.istack + ', i32 0, ' + expr.itype + ' ' + sub);
+          ir.push('  ' + aval + ' = load ' + ritype + ', ptr ' + aoff);
         }
         ast.type = rtype;
         ast.itype = ritype;
@@ -1202,8 +1195,8 @@ function IR(theAST) {
             rname = '%' + st.new_name(deref_name(ast)),
             roff = rname + '_off',
             rval = rname + '_val';
-        ir.push('  ' + roff + ' = getelementptr inbounds ' + lvalue.itype + '* ' + lvalue.istack + ', i32 0, i32 ' + cidx);
-        ir.push('  ' + rval + ' = load ' + clltype + '* ' + roff);
+        ir.push('  ' + roff + ' = getelementptr inbounds ' + lvalue.itype + ', ptr ' + lvalue.istack + ', i32 0, i32 ' + cidx);
+        ir.push('  ' + rval + ' = load ' + clltype + ', ptr ' + roff);
         ast.type = ctype;
         ast.itype = clltype;
         ast.istack = roff;
@@ -1234,8 +1227,8 @@ function IR(theAST) {
             sname = '@.string' + (str_cnt++),
             lname;
         ir.push([sname + ' = global ' + itype + ' ' + sval]);
-        ir.push('  ' + lname + ' = getelementptr inbounds ' + itype + '* ' + sname + ', i32 0'); 
-        ast.itype = itype + '*';
+        ir.push('  ' + lname + ' = getelementptr inbounds ' + itype + ', ptr ' + sname + ', i32 0, i32 0');
+        ast.itype = 'ptr';
         ast.ilocal = lname;
         ast.istack = sname;
         break;
@@ -1322,12 +1315,12 @@ function IR(theAST) {
             pdecl.lparams.push({node:'variable',id:id,type:vtype});
             st.replace(fname,pdecl);
           }
-          ir.push('  ' + new_pname + ' = load ' + vtype.lltype + '* ' + new_sname + ' ; ' + l);
+          ir.push('  ' + new_pname + ' = load ' + vtype.lltype + ', ptr ' + new_sname + ' ; ' + l);
           ast.ilocal = new_pname;
           ast.istack = new_sname;
         }
 
-        ir.push('  ' + lname + ' = load ' + vtype.lltype + '* ' + vdecl.sname);
+        ir.push('  ' + lname + ' = load ' + vtype.lltype + ', ptr ' + vdecl.sname);
         ast.type = vtype;
         ast.itype = vtype.lltype;
         ast.ilocal = lname;
