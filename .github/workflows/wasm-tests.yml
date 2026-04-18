@@ -1,0 +1,35 @@
+name: WASM Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  wasm:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm-18 lld-18
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build parser and support units
+        run: make
+
+      - name: Build all wasm test targets
+        run: make wasm_objects
