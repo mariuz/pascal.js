@@ -1,0 +1,41 @@
+name: WASM Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  wasm:
+    runs-on: ubuntu-24.04
+    env:
+      LLVM_VERSION: "18"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm-${LLVM_VERSION} lld-${LLVM_VERSION}
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build parser and support units
+        run: make
+
+      - name: Build all wasm test targets
+        run: make wasm_objects
