@@ -3,6 +3,8 @@ BUILDDIR ?= build
 RUNLL ?= ./runll
 RUNFPC ?= ./runfpc
 JISON ?= ./node_modules/.bin/jison
+LLC ?= llc-18
+WASM_LD ?= wasm-ld-18
 
 TESTS ?= semi1 \
 	 write1 write2 write3 \
@@ -47,7 +49,6 @@ all: parse.js units/kbd.js
 clean:
 	rm -f $(BUILDDIR)/* parse.js
 	rm -f units/kbd.ll units/kbd.js
-
 $(JISON):
 	npm install
 
@@ -58,7 +59,7 @@ parse.js: parse.jison $(JISON)
 units/kbd.js: units/kbd.ll
 	echo "Munging $< into $@"
 	@echo "var llvm_ir = [" > $@; \
-	egrep -v "^target |^@stdout =|declare.*@malloc|declare.*@fflush|declare.*@printf|struct._IO_FILE =" $< | \
+	egrep -v "^target |^source_filename|^@stdout =|declare.*@malloc|declare.*@fflush|declare.*@printf|struct._IO_FILE =" $< | \
 	    sed -e "s@\\\\@\\\\\\\\@g" \
 	        -e "s/'/\\\\'/g" \
 		-e "s/^/'/" \
@@ -80,11 +81,14 @@ FPC_OUTPUT=$(GOOD_TESTS:%=$(BUILDDIR)/%.out1)
 LL_OUTPUT=$(GOOD_TESTS:%=$(BUILDDIR)/%.out2)
 
 JS_OBJECTS=$(GOOD_TESTS:%=$(BUILDDIR)/%.js)
+WASM_OBJECTS=$(GOOD_TESTS:%=$(BUILDDIR)/%.wasm)
 
 DIFFS=$(GOOD_TESTS:%=$(BUILDDIR)/%.diff)
 FAIL_MARKS=$(FAIL_TESTS:%=$(BUILDDIR)/%.fail-msg)
 
 js_objects: $(JS_OBJECTS)
+
+wasm_objects: $(WASM_OBJECTS)
 
 $(FPC_OBJECTS): $(BUILDDIR)/%.1: $(TESTDIR)/%.pas $(TEST_DEPS)
 	@if [ -e $<.out ]; then \
@@ -100,6 +104,9 @@ $(LL_OBJECTS): $(BUILDDIR)/%.2: $(TESTDIR)/%.pas $(TEST_DEPS)
 
 $(JS_OBJECTS): $(BUILDDIR)/%.js: $(TESTDIR)/%.pas $(TEST_DEPS)
 	node compile.js $< $@
+
+$(WASM_OBJECTS): $(BUILDDIR)/%.wasm: $(TESTDIR)/%.pas $(TEST_DEPS)
+	node compile_wasm.js $< $@
 
 $(FAIL_MARKS): $(BUILDDIR)/%.fail-msg: $(TESTDIR)/%.pas $(TEST_DEPS)
 	@echo "Verifying that $< fails"; \
@@ -164,4 +171,4 @@ test: test_prefix $(DIFFS) $(FAIL_MARKS)
 	[ -n "$${fail}" ] && echo "Failing tests: $${fail}"; \
 	true
 	
-.PHONY: all clean js_objects
+.PHONY: all clean js_objects wasm_objects

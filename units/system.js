@@ -6,15 +6,14 @@ function SYSTEM (st) {
   function init() {
     var ir = [];
 
-    ir.push(['declare i32 @printf(i8*, ...)']);
-    ir.push(['declare i32 @scanf(i8*, ...)']);
+    ir.push(['declare i32 @printf(ptr, ...)']);
+    ir.push(['declare i32 @scanf(ptr, ...)']);
     ir.push(['declare double @drand48()']);
     ir.push(['declare i32 @lrand48()']);
     ir.push(['declare void @exit(i32) noreturn nounwind']);
     ir.push(['']);
-    ir.push(['%struct._IO_FILE = type { i32, i8* }']);
-    ir.push(['@stdout = external global %struct._IO_FILE*']);
-    ir.push(['declare i32 @fflush(%struct._IO_FILE*)']);
+    ir.push(['@stdout = external global ptr']);
+    ir.push(['declare i32 @fflush(ptr)']);
     ir.push(['']);
     //ir.push(['@.newline = private constant [3 x i8] c"\\0D\\0A\\00"']);
     ir.push(['@.newline = private constant [2 x i8] c"\\0A\\00"']);
@@ -61,15 +60,14 @@ function SYSTEM (st) {
         default:
           throw new Error("Unknown READ type: " + param.type.name);
       }
-      ir.push('  ' + str + ' = getelementptr inbounds [' + flen + ' x i8]* ' +
+      ir.push('  ' + str + ' = getelementptr inbounds [' + flen + ' x i8], ptr ' +
               format + ', i32 0, i32 0');
       if (scanf_var_args) {
-        ir.push('  ' + call + ' = call i32 (i8*, ...)* @' + scanf_name +
-                '(i8* ' + str + ', ' + param.itype + '* ' + param.istack + ')');
+        ir.push('  ' + call + ' = call i32 (ptr, ...) @' + scanf_name +
+                '(ptr ' + str + ', ptr ' + param.istack + ')');
       } else {
-          ir.push('  ' + cast + ' = bitcast ' + param.itype + '* ' + param.istack + ' to i8*');
-          ir.push('  ' + call + ' = call i32 (i8*, i8*)* @' + scanf_name +
-                  '(i8* ' + str + ', i8* ' + cast + ')');
+          ir.push('  ' + call + ' = call i32 (ptr, ptr) @' + scanf_name +
+                  '(ptr ' + str + ', ptr ' + param.istack + ')');
       }
     }
     ir.push('  ; READ finish');
@@ -105,9 +103,9 @@ function SYSTEM (st) {
                     str_local = st.new_name('%' + param.id + "_str");
                 format = "@.str_format"; 
                 ir.push('  ' + offset + ' = zext ' + param.itype + ' ' + param.ilocal + ' to i32');
-                ir.push('  ' + array_idx + ' = getelementptr ' + ctype.enum_type + '* ' + ctype.enum_var + ', i32 0, i32 ' + offset);
-                ir.push('  ' + str_local + ' = load i8** ' + array_idx);
-                pitype = 'i8*';
+                ir.push('  ' + array_idx + ' = getelementptr ' + ctype.enum_type + ', ptr ' + ctype.enum_var + ', i32 0, i32 ' + offset);
+                ir.push('  ' + str_local + ' = load ptr, ptr ' + array_idx);
+                pitype = 'ptr';
                 pilocal = str_local;
                 break;
               case 'CHARACTER':
@@ -132,13 +130,13 @@ function SYSTEM (st) {
         default:
           throw new Error("Unknown WRITE type: " + param.type.name);
       }
-      ir.push('  ' + str + ' = getelementptr inbounds [' + flen + ' x i8]* ' +
+      ir.push('  ' + str + ' = getelementptr inbounds [' + flen + ' x i8], ptr ' +
               format + ', i32 0, i32 0');
-      ir.push('  ' + call1 + ' = call i32 (i8*, ...)* @printf(i8* ' + str +
+      ir.push('  ' + call1 + ' = call i32 (ptr, ...) @printf(ptr ' + str +
               ', ' + pitype + ' ' + pilocal + ')');
     }
-    ir.push('  ' + sout + ' = load %struct._IO_FILE** @stdout');
-    ir.push('  ' + call2 + ' = call i32 @fflush(%struct._IO_FILE* ' + sout + ')');
+    ir.push('  ' + sout + ' = load ptr, ptr @stdout');
+    ir.push('  ' + call2 + ' = call i32 @fflush(ptr ' + sout + ')');
     ir.push('  ; WRITE finish');
     return ir;
   }
@@ -146,13 +144,13 @@ function SYSTEM (st) {
   function WRITELN (ast, cparams) {
     var ir = [],
         pre = st.new_name('WRITELN'),
-        str = '%' + pre + 'str',
-        call = '%' + pre + 'call';
+        nl_ptr = '%' + pre + 'nl_ptr';
     ir.push('  ; WRITELN start');
     if (cparams.length > 0) {
         ir.push.apply(ir, WRITE(ast, cparams));
     }
-    ir.push.apply(ir, WRITE(ast, [{type:{name: 'STRING'},itype:'[2 x i8]*',ilocal:'@.newline'}]));
+    ir.push('  ' + nl_ptr + ' = getelementptr inbounds [2 x i8], ptr @.newline, i32 0, i32 0');
+    ir.push.apply(ir, WRITE(ast, [{type:{name: 'STRING'},itype:'ptr',ilocal:nl_ptr}]));
     ir.push('  ; WRITELN finish');
     return ir;
   }
@@ -238,8 +236,7 @@ function SYSTEM (st) {
         if (cparam.val.length > 1) {
           throw new Error("Invalid type passed to ORD: " + ctype.name);
         }
-        ir.push('  ' + lname1 + ' = getelementptr inbounds ' + cparam.itype + ' ' + cparam.istack + ', i32 0, i32 0');
-        ir.push('  ' + lname2 + ' = load i8* ' + lname1);
+        ir.push('  ' + lname2 + ' = load i8, ptr ' + cparam.ilocal);
         ir.push('  ' + lname + ' = sext i8 ' + lname2 + ' to i32');
         break;
       default:
@@ -301,23 +298,23 @@ function SYSTEM (st) {
         if (cparam.type.origname === 'CHARACTER') {
           ir.push('  ' + tsize + ' = add i64 1, ' + prev_tsize);
           ir.push('  ' + decay + ' = alloca i8');
-          ir.push('  store i8 ' + cparam.ilocal + ', i8* ' + decay);
+          ir.push('  store i8 ' + cparam.ilocal + ', ptr ' + decay);
           size = 1;
         } else {
-          ir.push('  ' + decay + ' = bitcast ' + cparam.itype + ' ' + cparam.ilocal + ' to i8*');
-          ir.push('  ' + size + ' = call i64 @strlen(i8* ' + decay + ')');
+          decay = cparam.ilocal;
+          ir.push('  ' + size + ' = call i64 @strlen(ptr ' + decay + ')');
           ir.push('  ' + tsize + ' = add i64 ' + size + ', ' + prev_tsize);
         }
-        ir_after.push('  ' + ret + ' = call i8* @strncat(i8* ' + lname + ', i8* ' + decay + ', i64 ' + size + ')');
+        ir_after.push('  ' + ret + ' = call ptr @strncat(ptr ' + lname + ', ptr ' + decay + ', i64 ' + size + ')');
         prev_tsize = tsize;
     }
     ir.push('  ' + new_tsize + ' = add i64 ' + prev_tsize + ', 1');
-    ir.push('  ' + lname + ' = call i8* @malloc(i64 ' + new_tsize + ')');
-    ir.push('  store i8 0, i8* ' + lname);
+    ir.push('  ' + lname + ' = call ptr @malloc(i64 ' + new_tsize + ')');
+    ir.push('  store i8 0, ptr ' + lname);
     ir.push.apply(ir, ir_after);
     ir.push('  ; CONCAT finish');
     ast.type = {node:'type',name:'STRING'};
-    ast.itype = 'i8*';
+    ast.itype = 'ptr';
     ast.ilocal = lname;
     return ir;
   }

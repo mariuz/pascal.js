@@ -5,9 +5,10 @@
 Pascal.js is a Pascal compiler (Turbo Pascal 1.0-ish) implemented in
 JavaScript that outputs [LLVM](http://llvm.org) IR (intermediate
 representation). The IR can then compiled to native machine code
-(using LLVM as a backend), or compiled to JavaScript (via
+(using LLVM as a backend), compiled to JavaScript (via
 [LLVM.js](http://github.com/azakai/llvm.js)) so that it can run as
-a Node.js script or can run in a browser.
+a Node.js script or can run in a browser, or compiled to
+[WebAssembly](https://webassembly.org/) (using LLVM and wasm-ld).
 
 Pascal.js uses an [LALR(1)](http://en.wikipedia.org/wiki/LALR_parser)
 (bottom-up lookahead left-to-right) parser generated using
@@ -91,6 +92,28 @@ Generate LLVM IR (skipping assembly) using `ir.js` like this:
 ```
 node ir.js tests/ffib.pas > build/ffib.ll
 ```
+
+
+## WebAssembly (WASM) Target
+
+To compile to WebAssembly, pascal.js uses `llc` and `wasm-ld` from
+LLVM/Clang. You can install them on Debian/Ubuntu like this:
+
+```
+sudo apt-get install clang lld
+```
+
+Compile to a WebAssembly module using `compile_wasm.js`:
+
+```
+node compile_wasm.js tests/ffib.pas build/ffib.wasm
+```
+
+The resulting `.wasm` file is a WebAssembly binary module that exports
+all Pascal functions. It imports C standard library functions (such as
+`printf`, `malloc`) from the host environment. You can run it using a
+WebAssembly runtime that provides these imports, or load it in a browser
+with a JavaScript wrapper that supplies the required imports.
 
 
 ## Language Features Supported
